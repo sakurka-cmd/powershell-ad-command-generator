@@ -42,6 +42,7 @@ import {
   Crown,
   Building2,
   UserCircle,
+  ShieldCheck,
 } from 'lucide-react'
 
 // ─── Types ──────────────────────────────────────────────
@@ -527,6 +528,166 @@ function SearchUsers() {
   } generate={generate} />
 }
 
+function CheckEffectiveRights() {
+  const [checkMode, setCheckMode] = useState<'acl' | 'user-rights' | 'privileged-groups'>('acl')
+  // ACL mode
+  const [targetObject, setTargetObject] = useState('')
+  // User rights mode
+  const [principal, setPrincipal] = useState('')
+  const [rightsObject, setRightsObject] = useState('')
+  const [showInherited, setShowInherited] = useState(true)
+  // Privileged groups mode
+  const [targetUser, setTargetUser] = useState('')
+  const [customGroups, setCustomGroups] = useState('')
+
+  const PRIVILEGED_GROUPS = [
+    'Domain Admins', 'Enterprise Admins', 'Schema Admins',
+    'Administrators', 'Account Operators', 'Server Operators',
+    'Backup Operators', 'Print Operators', 'DNSAdmins',
+    'Group Policy Creator Owners', 'Restricted Groups',
+  ]
+
+  const generate = () => {
+    const lines: string[] = []
+
+    if (checkMode === 'acl') {
+      if (!targetObject) return ''
+      lines.push('# View ACL (access control list) on an AD object')
+      lines.push(`$acl = Get-Acl "AD:\\${targetObject}"`)
+      lines.push(`$acl.Access | Select-Object IdentityReference, ActiveDirectoryRights, AccessControlType, IsInherited, ObjectType, InheritanceType |`
+        + `\n    Sort-Object IdentityReference |`
+        + `\n    Format-Table -AutoSize -Wrap`)
+      lines.push('')
+      lines.push('# Summary: permission count per trustee')
+      lines.push(`$acl.Access | Group-Object IdentityReference |`
+        + `\n    Select-Object Count, Name |`
+        + `\n    Sort-Object Count -Descending |`
+        + `\n    Format-Table -AutoSize`)
+    }
+
+    else if (checkMode === 'user-rights') {
+      if (!principal || !rightsObject) return ''
+      lines.push('# Check effective rights of a user/principal on a specific AD object')
+      lines.push(`$objectDN = "${rightsObject}"`)
+      lines.push(`$principalName = "${principal}"`)
+      lines.push('')
+      lines.push('# Get all access rules on the object')
+      lines.push(`$acl = Get-Acl "AD:\\$objectDN"`)
+      lines.push(`$rules = $acl.Access`)
+      lines.push('')
+      if (showInherited) {
+        lines.push('# Show direct and inherited rights')
+      } else {
+        lines.push('# Show only directly assigned rights (excluding inherited)')
+      }
+      lines.push(`$filtered = $rules | Where-Object { $_.IdentityReference -match $principalName${showInherited ? '' : ' -and $_.IsInherited -eq $false'} }`)
+      lines.push('')
+      lines.push('if ($filtered) {')
+      lines.push('    $filtered | Select-Object IdentityReference, ActiveDirectoryRights, AccessControlType, IsInherited, ObjectType, InheritanceType |')
+      lines.push('        Sort-Object ActiveDirectoryRights |')
+      lines.push('        Format-Table -AutoSize -Wrap')
+      lines.push('} else {')
+      lines.push('    Write-Host "No access rules found for $principalName on $objectDN" -ForegroundColor Yellow')
+      lines.push('}')
+    }
+
+    else if (checkMode === 'privileged-groups') {
+      if (!targetUser) return ''
+      const groups = customGroups.trim()
+        ? customGroups.split(',').map((g) => g.trim()).filter(Boolean)
+        : PRIVILEGED_GROUPS
+
+      lines.push('# Check if user is a member of privileged groups')
+      lines.push(`$user = Get-ADUser -Identity "${targetUser}" -Properties MemberOf`)
+      lines.push('$userGroups = $user.MemberOf | ForEach-Object {')
+      lines.push('    ($_.Split(",")[0]).Replace("CN=","")')
+      lines.push('}')
+      lines.push('')
+      lines.push('$privilegedGroups = @(')
+      groups.forEach((g) => {
+        lines.push(`    "${g}"${g === groups[groups.length - 1] ? '' : ','}`)
+      })
+      lines.push(')')
+      lines.push('')
+      lines.push('$matched = $userGroups | Where-Object { $privilegedGroups -contains $_ }')
+      lines.push('')
+      lines.push('if ($matched) {')
+      lines.push('    Write-Host "User is a member of $($matched.Count) privileged group(s):" -ForegroundColor Yellow')
+      lines.push('    $matched | ForEach-Object { Write-Host "  - $_" }')
+      lines.push('} else {')
+      lines.push('    Write-Host "User is NOT a member of any monitored privileged groups." -ForegroundColor Green')
+      lines.push('}')
+      lines.push('')
+      lines.push('# Also show ALL group memberships for full picture')
+      lines.push('$user.MemberOf | Get-ADGroup | Select-Object Name, GroupScope, GroupCategory | Sort-Object Name | Format-Table -AutoSize')
+    }
+
+    return lines.join('\n')
+  }
+
+  return <CommandForm inputs={
+    <div className="space-y-4">
+      {/* Mode selector */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">Check mode</Label>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {([
+            { value: 'acl', label: 'View object ACL' },
+            { value: 'user-rights', label: 'User rights on object' },
+            { value: 'privileged-groups', label: 'Privileged group check' },
+          ] as const).map((mode) => (
+            <button
+              key={mode.value}
+              type="button"
+              onClick={() => setCheckMode(mode.value)}
+              className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                checkMode === mode.value
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background border-border hover:bg-accent'
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ACL mode */}
+      {checkMode === 'acl' && (
+        <Field label="AD object (Distinguished Name)" value={targetObject} onChange={setTargetObject} placeholder="OU=Users,DC=domain,DC=com" />
+      )}
+
+      {/* User rights mode */}
+      {checkMode === 'user-rights' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Principal (user/group)" value={principal} onChange={setPrincipal} placeholder="DOMAIN\\jdoe or jdoe" />
+          <Field label="AD object (Distinguished Name)" value={rightsObject} onChange={setRightsObject} placeholder="OU=Users,DC=domain,DC=com" />
+          <div className="flex items-center gap-2 md:col-span-2">
+            <Checkbox id="showInherited" checked={showInherited} onCheckedChange={(v) => setShowInherited(v === true)} />
+            <Label htmlFor="showInherited" className="text-sm cursor-pointer">Include inherited permissions</Label>
+          </div>
+        </div>
+      )}
+
+      {/* Privileged groups mode */}
+      {checkMode === 'privileged-groups' && (
+        <div className="space-y-4">
+          <Field label="Username (sAMAccountName)" value={targetUser} onChange={setTargetUser} placeholder="jdoe" />
+          <Field
+            label="Privileged groups list (comma-separated, leave empty for default)"
+            value={customGroups}
+            onChange={setCustomGroups}
+            placeholder={PRIVILEGED_GROUPS.join(', ')}
+          />
+          <p className="text-xs text-muted-foreground">
+            Default list: {PRIVILEGED_GROUPS.join(', ')}. Edit the field above to use a custom list.
+          </p>
+        </div>
+      )}
+    </div>
+  } generate={generate} />
+}
+
 function CreateGroup() {
   const [groupName, setGroupName] = useState('')
   const [scope, setScope] = useState('Global')
@@ -843,6 +1004,15 @@ const useCases: UseCase[] = [
     category: 'search',
     roles: ['user', 'container_admin', 'domain_admin'],
     component: SearchUsers,
+  },
+  {
+    id: 'check-effective-rights',
+    title: 'Check effective rights',
+    description: 'View ACL on AD objects, check user permissions, or audit privileged group memberships',
+    icon: <ShieldCheck className="h-4 w-4" />,
+    category: 'search',
+    roles: ['user', 'container_admin', 'domain_admin'],
+    component: CheckEffectiveRights,
   },
   {
     id: 'create-group',
