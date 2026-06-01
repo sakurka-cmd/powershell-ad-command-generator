@@ -45,6 +45,10 @@ import {
   ShieldCheck,
   LayoutList,
   Server,
+  Info,
+  ChevronDown,
+  ChevronRight,
+  BookOpen,
 } from 'lucide-react'
 
 // ─── Types ──────────────────────────────────────────────
@@ -1158,6 +1162,118 @@ const categories = [
   { id: 'import', label: 'Import', icon: <FileUp className="h-4 w-4" /> },
 ]
 
+// ─── Discovery Commands Helper ───────────────────────────
+
+function DiscoveryCommandsPanel() {
+  const [showDiscovery, setShowDiscovery] = useState(false)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+
+  const commands = [
+    {
+      label: 'Get current domain FQDN',
+      cmd: '(Get-ADDomain).DNSRoot',
+      desc: 'Returns the FQDN of the domain the current machine/user belongs to (e.g. corp.contoso.com)',
+    },
+    {
+      label: 'Get domain NetBIOS name',
+      cmd: '(Get-ADDomain).NetBIOSName',
+      desc: 'Returns the short/pre-Windows 2000 name (e.g. CORP)',
+    },
+    {
+      label: 'Get domain DN (Distinguished Name)',
+      cmd: '(Get-ADDomain).DistinguishedName',
+      desc: 'Returns the full DN for building LDAP paths (e.g. DC=corp,DC=contoso,DC=com)',
+    },
+    {
+      label: 'Get all domain controllers in domain',
+      cmd: 'Get-ADDomainController -Filter * | Select-Object Name, HostName, Site, IPv4Address, OperatingSystem | Format-Table -AutoSize',
+      desc: 'Lists all DCs with their hostname, site, IP, and OS version',
+    },
+    {
+      label: 'Get the nearest / preferred DC',
+      cmd: "(Get-ADDomainController -Discover).HostName",
+      desc: 'Auto-discovers the closest DC by site and returns its hostname (e.g. DC01.corp.contoso.com)',
+    },
+    {
+      label: 'Get DC with FSMO roles',
+      cmd: 'Get-ADDomain | Select-Object InfrastructureMaster, RIDMaster, PDCEmulator, DomainNamingMaster',
+      desc: 'Shows which DCs hold the FSMO roles for the current domain',
+    },
+    {
+      label: 'Get forest info (all domains)',
+      cmd: 'Get-ADForest | Select-Object Name, RootDomain, Domains, GlobalCatalogs, ApplicationPartitions',
+      desc: 'Lists the forest root, all child domains, GC servers',
+    },
+    {
+      label: 'Get all trusted domains',
+      cmd: 'Get-ADTrust -Filter * | Select-Object SourceName, TargetName, TrustType, TrustDirection, IsTreeParent',
+      desc: 'Shows domain trusts (parent-child, external, forest)',
+    },
+  ]
+
+  const handleCopy = async (cmd: string, idx: number) => {
+    try {
+      await navigator.clipboard.writeText(cmd)
+      setCopiedIdx(idx)
+      toast.success('Command copied!')
+      setTimeout(() => setCopiedIdx(null), 2000)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = cmd
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopiedIdx(idx)
+      toast.success('Command copied!')
+      setTimeout(() => setCopiedIdx(null), 2000)
+    }
+  }
+
+  return (
+    <div className="space-y-2 mt-2">
+      <button
+        type="button"
+        onClick={() => setShowDiscovery(!showDiscovery)}
+        className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer"
+      >
+        {showDiscovery ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <BookOpen className="h-3 w-3" />
+        {showDiscovery ? 'Hide discovery commands' : 'How to find your Domain FQDN & DC hostname'}
+      </button>
+      {showDiscovery && (
+        <div className="rounded-lg border p-3 space-y-3 bg-card text-xs">
+          <p className="text-muted-foreground">
+            Run these commands in PowerShell (with ActiveDirectory module) to discover your domain and DC information.
+            Click any command to copy it.
+          </p>
+          <div className="space-y-2.5">
+            {commands.map((item, idx) => (
+              <div key={idx} className="space-y-1">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-foreground">{item.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(item.cmd, idx)}
+                    className="shrink-0 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                    title="Copy command"
+                  >
+                    {copiedIdx === idx ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                  </button>
+                </div>
+                {item.desc && <p className="text-muted-foreground">{item.desc}</p>}
+                <pre className="bg-zinc-950 text-zinc-100 dark:bg-zinc-900 dark:text-zinc-100 px-2 py-1.5 rounded text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">
+                  {item.cmd}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Domain Configuration ─────────────────────────────────
 
 function DomainConfigPanel({
@@ -1194,11 +1310,14 @@ function DomainConfigPanel({
         >
           {open ? 'hide' : 'configure'}
         </button>
+        <span className="relative group cursor-help" title="Domain FQDN = full domain name (e.g. corp.contoso.com). DC hostname = specific domain controller machine name (e.g. DC01 or DC01.corp.contoso.com).">
+          <Info className="h-3.5 w-3.5 text-muted-foreground" />
+        </span>
       </div>
       {open && (
         <div className="rounded-lg border p-3 space-y-3 bg-card">
           <p className="text-xs text-muted-foreground">
-            Add domain controllers to generate commands with -Server parameter targeting specific domains.
+            Add domain controllers to generate commands with <code className="bg-muted px-1 rounded">-Server</code> parameter targeting specific domains.
             Leave empty for the default (current) domain.
           </p>
           {domains.length > 0 && (
@@ -1219,24 +1338,37 @@ function DomainConfigPanel({
             </div>
           )}
           <div className="grid grid-cols-2 gap-2">
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Domain FQDN"
-              className="text-xs h-8"
-            />
-            <div className="flex gap-1">
+            <div className="space-y-1">
               <Input
-                value={newDc}
-                onChange={(e) => setNewDc(e.target.value)}
-                placeholder="DC hostname"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="corp.contoso.com"
                 className="text-xs h-8"
               />
-              <Button size="sm" variant="outline" onClick={addDomain} className="h-8 px-2 shrink-0">
-                +
-              </Button>
+              <p className="text-[10px] text-muted-foreground">
+                <Info className="h-2.5 w-2.5 inline mr-0.5" />
+                Domain FQDN — full DNS name of the AD domain
+              </p>
+            </div>
+            <div className="space-y-1">
+              <div className="flex gap-1">
+                <Input
+                  value={newDc}
+                  onChange={(e) => setNewDc(e.target.value)}
+                  placeholder="DC01"
+                  className="text-xs h-8"
+                />
+                <Button size="sm" variant="outline" onClick={addDomain} className="h-8 px-2 shrink-0">
+                  +
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                <Info className="h-2.5 w-2.5 inline mr-0.5" />
+                DC hostname — domain controller server name (optional FQDN)
+              </p>
             </div>
           </div>
+          <DiscoveryCommandsPanel />
         </div>
       )}
       {!open && domains.length === 0 && (
