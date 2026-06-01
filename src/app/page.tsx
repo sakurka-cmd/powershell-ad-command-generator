@@ -258,52 +258,244 @@ function UnlockAccount() {
   } generate={generate} />
 }
 
+const SEARCH_FILTER_FIELDS = [
+  { value: 'Name', label: 'Name (display name)' },
+  { value: 'SamAccountName', label: 'sAMAccountName (login)' },
+  { value: 'EmailAddress', label: 'EmailAddress' },
+  { value: 'Title', label: 'Title (job title)' },
+  { value: 'Department', label: 'Department' },
+  { value: 'Description', label: 'Description' },
+  { value: 'Office', label: 'Office' },
+  { value: 'City', label: 'City' },
+  { value: 'Company', label: 'Company' },
+  { value: 'EmployeeNumber', label: 'EmployeeNumber' },
+  { value: 'Surname', label: 'Surname (last name)' },
+  { value: 'GivenName', label: 'GivenName (first name)' },
+  { value: 'UserPrincipalName', label: 'UPN (user@domain)' },
+] as const
+
+const SEARCH_OPERATOR_OPTIONS = [
+  { value: 'like', label: 'like (contains / wildcard)' },
+  { value: 'eq', label: 'eq (exact match)' },
+  { value: 'ne', label: 'ne (not equal)' },
+  { value: '-notlike', label: 'notlike (does not contain)' },
+] as const
+
+const DEFAULT_EXTENDED_PROPS = [
+  'Name', 'SamAccountName', 'UserPrincipalName',
+  'GivenName', 'Surname', 'EmailAddress',
+  'Title', 'Department', 'Company',
+  'Office', 'City',
+  'Enabled', 'LockedOut',
+  'PasswordNeverExpires',
+  'PasswordLastSet', 'LastLogonDate',
+  'whenCreated', 'whenChanged',
+  'Description',
+  'DistinguishedName',
+]
+
+const PRESET_PROPS: Record<string, string> = {
+  basic: 'Name,SamAccountName,EmailAddress,Enabled',
+  extended: DEFAULT_EXTENDED_PROPS.join(','),
+  account: 'Name,SamAccountName,Enabled,LockedOut,PasswordNeverExpires,PasswordLastSet,LastLogonDate,whenCreated',
+  org: 'Name,SamAccountName,Title,Department,Company,Office,City,Manager,Description',
+  contact: 'Name,SamAccountName,EmailAddress,UserPrincipalName,Office,PhoneNumber',
+}
+
 function SearchUsers() {
+  const [searchMode, setSearchMode] = useState<'filter' | 'identities'>('filter')
+  // Filter mode state
   const [filterField, setFilterField] = useState('Name')
   const [filterOperator, setFilterOperator] = useState('like')
   const [filterValue, setFilterValue] = useState('')
-  const [properties, setProperties] = useState('Name,SamAccountName,EmailAddress,Enabled')
+  // Identity mode state
+  const [identities, setIdentities] = useState('')
+  // Common
+  const [properties, setProperties] = useState(DEFAULT_EXTENDED_PROPS.join(','))
+  const [propPreset, setPropPreset] = useState('extended')
+  const [sortProperty, setSortProperty] = useState('Name')
+  const [enabledOnly, setEnabledOnly] = useState(false)
+  const [disabledOnly, setDisabledOnly] = useState(false)
+
+  const handlePreset = (preset: string) => {
+    setPropPreset(preset)
+    if (PRESET_PROPS[preset]) {
+      setProperties(PRESET_PROPS[preset])
+    }
+  }
 
   const generate = () => {
-    if (!filterValue) return ''
-    const filterExpr = filterOperator === 'like'
-      ? `"${filterValue}*"`
-      : `"${filterValue}"`
-    return `# Search users in AD\nGet-ADUser -Filter {${filterField} -${filterOperator} ${filterExpr}} -Properties ${properties} | Select-Object ${properties} | Format-Table -AutoSize`
+    const props = properties || DEFAULT_EXTENDED_PROPS.join(',')
+    const lines: string[] = []
+
+    if (searchMode === 'filter') {
+      if (!filterValue) return ''
+      lines.push('# Search users in AD')
+      const filterExpr = filterOperator === 'like'
+        ? `"${filterValue}*"`
+        : `"${filterValue}"`
+
+      let enabledFilter = ''
+      if (enabledOnly) enabledFilter = ' -and $true -eq $_.Enabled'
+      if (disabledOnly) enabledFilter = ' -and $false -eq $_.Enabled'
+
+      if (enabledOnly || disabledOnly) {
+        lines.push(`Get-ADUser -Filter {${filterField} -${filterOperator} ${filterExpr}${enabledFilter}} -Properties ${props} |`
+          + `\n    Select-Object ${props} |`
+          + `\n    Sort-Object ${sortProperty} |`
+          + `\n    Format-Table -AutoSize -Wrap`)
+      } else {
+        lines.push(`Get-ADUser -Filter {${filterField} -${filterOperator} ${filterExpr}} -Properties ${props} |`
+          + `\n    Select-Object ${props} |`
+          + `\n    Sort-Object ${sortProperty} |`
+          + `\n    Format-Table -AutoSize -Wrap`)
+      }
+    } else {
+      const idList = identities
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      if (idList.length === 0) return ''
+
+      if (idList.length === 1) {
+        lines.push('# Get user information')
+        lines.push(`Get-ADUser -Identity "${idList[0]}" -Properties ${props} |`
+          + `\n    Select-Object ${props} |`
+          + `\n    Format-List`) // single user -> Format-List
+      } else {
+        const quoted = idList.map((id) => `"${id}"`).join(', ')
+        lines.push('# Get information for multiple users')
+        lines.push(`$users = @(${quoted})`)
+        lines.push(`$users | ForEach-Object { Get-ADUser -Identity $_ -Properties ${props} } |`
+          + `\n    Select-Object ${props} |`
+          + `\n    Sort-Object ${sortProperty} |`
+          + `\n    Format-Table -AutoSize -Wrap`)
+      }
+    }
+    return lines.join('\n')
   }
 
   return <CommandForm inputs={
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-4">
+      {/* Search mode tabs */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Filter field</Label>
-        <Select value={filterField} onValueChange={setFilterField}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Name">Name</SelectItem>
-            <SelectItem value="SamAccountName">sAMAccountName</SelectItem>
-            <SelectItem value="EmailAddress">EmailAddress</SelectItem>
-            <SelectItem value="Title">Title</SelectItem>
-            <SelectItem value="Department">Department</SelectItem>
-            <SelectItem value="Description">Description</SelectItem>
-          </SelectContent>
-        </Select>
+        <Label className="text-sm font-medium">Search mode</Label>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setSearchMode('filter')}
+            className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+              searchMode === 'filter'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-background border-border hover:bg-accent'
+            }`}
+          >
+            Filter search
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode('identities')}
+            className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+              searchMode === 'identities'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-background border-border hover:bg-accent'
+            }`}
+          >
+            By identity (multiple)
+          </button>
+        </div>
       </div>
-      <div className="space-y-2">
-        <Label className="text-sm font-medium">Operator</Label>
-        <Select value={filterOperator} onValueChange={setFilterOperator}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="like">like (contains)</SelectItem>
-            <SelectItem value="eq">eq (exact match)</SelectItem>
-          </SelectContent>
-        </Select>
+
+      {/* Filter mode inputs */}
+      {searchMode === 'filter' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Filter field</Label>
+            <Select value={filterField} onValueChange={setFilterField}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SEARCH_FILTER_FIELDS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Operator</Label>
+            <Select value={filterOperator} onValueChange={setFilterOperator}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {SEARCH_OPERATOR_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Field label="Search value" value={filterValue} onChange={setFilterValue} placeholder="e.g. 'ivan'" />
+        </div>
+      )}
+
+      {/* Identity mode inputs */}
+      {searchMode === 'identities' && (
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Usernames or DNs (one per line)</Label>
+          <Textarea
+            value={identities}
+            onChange={(e) => setIdentities(e.target.value)}
+            placeholder={`jdoe\nasmith\nCN=John Doe,OU=Users,DC=domain,DC=com`}
+            rows={5}
+            className="font-mono text-sm"
+          />
+          <p className="text-xs text-muted-foreground">
+            Supports sAMAccountName, userPrincipalName, SID, or DistinguishedName. One user = Format-List, multiple = Format-Table.
+          </p>
+        </div>
+      )}
+
+      {/* Account status filter (only in filter mode) */}
+      {searchMode === 'filter' && (
+        <div className="flex flex-wrap gap-4">
+          <div className="flex items-center gap-2">
+            <Checkbox id="enabledOnly" checked={enabledOnly} onCheckedChange={(v) => { setEnabledOnly(v === true); if (v === true) setDisabledOnly(false) }} />
+            <Label htmlFor="enabledOnly" className="text-sm cursor-pointer">Enabled only</Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox id="disabledOnly" checked={disabledOnly} onCheckedChange={(v) => { setDisabledOnly(v === true); if (v === true) setEnabledOnly(false) }} />
+            <Label htmlFor="disabledOnly" className="text-sm cursor-pointer">Disabled only</Label>
+          </div>
+        </div>
+      )}
+
+      {/* Sort + Properties presets */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Sort by</Label>
+          <Select value={sortProperty} onValueChange={setSortProperty}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {DEFAULT_EXTENDED_PROPS.map((p) => (
+                <SelectItem key={p} value={p}>{p}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">Properties preset</Label>
+          <Select value={propPreset} onValueChange={handlePreset}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="basic">Basic (name, login, email, status)</SelectItem>
+              <SelectItem value="extended">Extended (full info)</SelectItem>
+              <SelectItem value="account">Account (password, lockout, dates)</SelectItem>
+              <SelectItem value="org">Organization (dept, company, office)</SelectItem>
+              <SelectItem value="contact">Contact (email, UPN, phone)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
-      <Field label="Search value" value={filterValue} onChange={setFilterValue} placeholder="e.g. 'ivan'" />
-      <Field label="Output properties" value={properties} onChange={setProperties} placeholder="Name,SamAccountName,Email" />
+
+      {/* Custom properties */}
+      <Field label="Output properties (comma-separated, edit freely)" value={properties} onChange={setProperties} placeholder="Name,SamAccountName,EmailAddress" multiline />
     </div>
   } generate={generate} />
 }
@@ -610,8 +802,8 @@ const useCases: UseCase[] = [
   },
   {
     id: 'search-users',
-    title: 'Search users',
-    description: 'Search AD users by name, email, department, or other attributes',
+    title: 'Search / Lookup users',
+    description: 'Search by filter or lookup multiple users with extended properties and table output',
     icon: <Search className="h-4 w-4" />,
     category: 'search',
     component: SearchUsers,
