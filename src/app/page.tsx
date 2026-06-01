@@ -39,9 +39,14 @@ import {
   Shield,
   KeyRound,
   ArrowRightLeft,
+  Crown,
+  Building2,
+  UserCircle,
 } from 'lucide-react'
 
 // ─── Types ──────────────────────────────────────────────
+
+type Role = 'user' | 'container_admin' | 'domain_admin'
 
 interface UseCase {
   id: string
@@ -49,8 +54,30 @@ interface UseCase {
   description: string
   icon: React.ReactNode
   category: 'group' | 'user' | 'account' | 'search' | 'import'
+  roles: Role[]
   component: React.ComponentType
 }
+
+const ROLES: { id: Role; label: string; icon: React.ReactNode; description: string }[] = [
+  {
+    id: 'user',
+    label: 'User',
+    icon: <UserCircle className="h-4 w-4" />,
+    description: 'Read-only access: search and view AD objects',
+  },
+  {
+    id: 'container_admin',
+    label: 'Container Admin',
+    icon: <Building2 className="h-4 w-4" />,
+    description: 'Manage objects within delegated OU/container',
+  },
+  {
+    id: 'domain_admin',
+    label: 'Domain Admin',
+    icon: <Crown className="h-4 w-4" />,
+    description: 'Full domain-wide control over all AD objects',
+  },
+]
 
 // ─── UseCase Components ──────────────────────────────────
 
@@ -742,6 +769,7 @@ const useCases: UseCase[] = [
     description: 'Add one or more users to an existing AD group',
     icon: <UserPlus className="h-4 w-4" />,
     category: 'group',
+    roles: ['container_admin', 'domain_admin'],
     component: AddUsersToGroup,
   },
   {
@@ -750,6 +778,7 @@ const useCases: UseCase[] = [
     description: 'Remove one or more users from an AD group',
     icon: <UserMinus className="h-4 w-4" />,
     category: 'group',
+    roles: ['container_admin', 'domain_admin'],
     component: RemoveUsersFromGroup,
   },
   {
@@ -758,6 +787,7 @@ const useCases: UseCase[] = [
     description: 'List all members of an AD group with optional details',
     icon: <Users className="h-4 w-4" />,
     category: 'group',
+    roles: ['user', 'container_admin', 'domain_admin'],
     component: ViewGroupMembers,
   },
   {
@@ -766,6 +796,7 @@ const useCases: UseCase[] = [
     description: 'View all groups that a specific user belongs to',
     icon: <ArrowRightLeft className="h-4 w-4" />,
     category: 'group',
+    roles: ['user', 'container_admin', 'domain_admin'],
     component: GetUserGroups,
   },
   {
@@ -774,6 +805,7 @@ const useCases: UseCase[] = [
     description: 'Create a new Active Directory user account',
     icon: <UserCog className="h-4 w-4" />,
     category: 'user',
+    roles: ['container_admin', 'domain_admin'],
     component: CreateNewUser,
   },
   {
@@ -782,6 +814,7 @@ const useCases: UseCase[] = [
     description: 'Activate or deactivate an AD user account',
     icon: <Shield className="h-4 w-4" />,
     category: 'account',
+    roles: ['container_admin', 'domain_admin'],
     component: EnableDisableAccount,
   },
   {
@@ -790,6 +823,7 @@ const useCases: UseCase[] = [
     description: 'Reset a user password and optionally require change at logon',
     icon: <KeyRound className="h-4 w-4" />,
     category: 'account',
+    roles: ['container_admin', 'domain_admin'],
     component: ResetPassword,
   },
   {
@@ -798,6 +832,7 @@ const useCases: UseCase[] = [
     description: 'Unlock a locked-out Active Directory user account',
     icon: <Unlock className="h-4 w-4" />,
     category: 'account',
+    roles: ['container_admin', 'domain_admin'],
     component: UnlockAccount,
   },
   {
@@ -806,6 +841,7 @@ const useCases: UseCase[] = [
     description: 'Search by filter or lookup multiple users with extended properties and table output',
     icon: <Search className="h-4 w-4" />,
     category: 'search',
+    roles: ['user', 'container_admin', 'domain_admin'],
     component: SearchUsers,
   },
   {
@@ -814,6 +850,7 @@ const useCases: UseCase[] = [
     description: 'Create a new security or distribution group in AD',
     icon: <FolderTree className="h-4 w-4" />,
     category: 'user',
+    roles: ['domain_admin'],
     component: CreateGroup,
   },
   {
@@ -822,6 +859,7 @@ const useCases: UseCase[] = [
     description: 'Move a user to a different Organizational Unit',
     icon: <FolderTree className="h-4 w-4" />,
     category: 'user',
+    roles: ['domain_admin'],
     component: MoveUser,
   },
   {
@@ -830,6 +868,7 @@ const useCases: UseCase[] = [
     description: 'Import multiple users from a CSV file into Active Directory',
     icon: <FileUp className="h-4 w-4" />,
     category: 'import',
+    roles: ['container_admin', 'domain_admin'],
     component: BulkImportCSV,
   },
 ]
@@ -847,12 +886,15 @@ const categories = [
 
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState('all')
+  const [activeRole, setActiveRole] = useState<Role>('container_admin')
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
+
+  const roleFiltered = useCases.filter((uc) => uc.roles.includes(activeRole))
 
   const filteredCases =
     activeCategory === 'all'
-      ? useCases
-      : useCases.filter((uc) => uc.category === activeCategory)
+      ? roleFiltered
+      : roleFiltered.filter((uc) => uc.category === activeCategory)
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -871,6 +913,47 @@ export default function Home() {
                 Generate ready-to-use PowerShell commands for Active Directory management
               </p>
             </div>
+          </div>
+
+          {/* Role Switcher */}
+          <div className="mt-4 space-y-2">
+            <Label className="text-sm font-medium">Role: select your AD permissions level</Label>
+            <div className="flex flex-wrap gap-2">
+              {ROLES.map((role) => {
+                const isActive = activeRole === role.id
+                const count = useCases.filter((uc) => uc.roles.includes(role.id)).length
+                return (
+                  <button
+                    key={role.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveRole(role.id)
+                      setActiveCategory('all')
+                      setExpandedCard(null)
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all ${
+                      isActive
+                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                        : 'bg-background border-border hover:bg-accent'
+                    }`}
+                  >
+                    {role.icon}
+                    <span>{role.label}</span>
+                    <Badge
+                      variant={isActive ? 'secondary' : 'outline'}
+                      className={`text-[10px] px-1.5 py-0 ${isActive ? 'bg-primary-foreground/20 text-primary-foreground' : ''}`}
+                    >
+                      {count}
+                    </Badge>
+                  </button>
+                )
+              })}
+            </div>
+            {ROLES.find((r) => r.id === activeRole) && (
+              <p className="text-xs text-muted-foreground">
+                {ROLES.find((r) => r.id === activeRole)!.description}
+              </p>
+            )}
           </div>
         </div>
       </header>
@@ -894,7 +977,7 @@ export default function Home() {
                 <span className="hidden sm:inline">{cat.label}</span>
                 {cat.id === 'all' && (
                   <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">
-                    {useCases.length}
+                    {roleFiltered.length}
                   </Badge>
                 )}
               </TabsTrigger>
