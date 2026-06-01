@@ -43,6 +43,8 @@ import {
   Building2,
   UserCircle,
   ShieldCheck,
+  LayoutList,
+  Server,
 } from 'lucide-react'
 
 // ─── Types ──────────────────────────────────────────────
@@ -56,7 +58,7 @@ interface UseCase {
   icon: React.ReactNode
   category: 'group' | 'user' | 'account' | 'search' | 'import'
   roles: Role[]
-  component: React.ComponentType
+  component: React.ComponentType<{ domains?: { name: string; dc: string }[] }>
 }
 
 const ROLES: { id: Role; label: string; icon: React.ReactNode; description: string }[] = [
@@ -82,7 +84,7 @@ const ROLES: { id: Role; label: string; icon: React.ReactNode; description: stri
 
 // ─── UseCase Components ──────────────────────────────────
 
-function AddUsersToGroup() {
+function AddUsersToGroup({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [groupName, setGroupName] = useState('')
   const [users, setUsers] = useState('')
 
@@ -96,7 +98,7 @@ function AddUsersToGroup() {
     return `# Add users to AD group\nAdd-ADGroupMember -Identity "${groupName}" -Members ${members}`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <Field label="Group name" value={groupName} onChange={setGroupName} placeholder="e.g. 'VPN-Users'" />
       <Field label="Users (one per line)" value={users} onChange={setUsers} placeholder={`user1\nuser2\nuser3`} multiline />
@@ -104,7 +106,7 @@ function AddUsersToGroup() {
   } generate={generate} />
 }
 
-function RemoveUsersFromGroup() {
+function RemoveUsersFromGroup({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [groupName, setGroupName] = useState('')
   const [users, setUsers] = useState('')
 
@@ -118,7 +120,7 @@ function RemoveUsersFromGroup() {
     return `# Remove users from AD group\nRemove-ADGroupMember -Identity "${groupName}" -Members ${members} -Confirm:$false`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <Field label="Group name" value={groupName} onChange={setGroupName} placeholder="e.g. 'VPN-Users'" />
       <Field label="Users (one per line)" value={users} onChange={setUsers} placeholder={`user1\nuser2\nuser3`} multiline />
@@ -126,7 +128,7 @@ function RemoveUsersFromGroup() {
   } generate={generate} />
 }
 
-function ViewGroupMembers() {
+function ViewGroupMembers({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [groupName, setGroupName] = useState('')
   const [recursive, setRecursive] = useState(false)
   const [properties, setProperties] = useState('Name,SamAccountName,DistinguishedName')
@@ -138,7 +140,7 @@ function ViewGroupMembers() {
     return `# View group members\nGet-ADGroupMember -Identity "${groupName}"${recursiveFlag} | Select-Object ${props} | Format-Table -AutoSize`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <Field label="Group name" value={groupName} onChange={setGroupName} placeholder="e.g. 'Domain Admins'" />
       <div className="flex items-center gap-2">
@@ -150,7 +152,7 @@ function ViewGroupMembers() {
   } generate={generate} />
 }
 
-function GetUserGroups() {
+function GetUserGroups({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [username, setUsername] = useState('')
   const [detailed, setDetailed] = useState(false)
 
@@ -162,7 +164,7 @@ function GetUserGroups() {
     return `# Get all groups for user\nGet-ADPrincipalGroupMembership -Identity "${username}" | Select-Object Name | Format-Table -AutoSize`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <Field label="Username (sAMAccountName)" value={username} onChange={setUsername} placeholder="e.g. 'jdoe'" />
       <div className="flex items-center gap-2">
@@ -173,7 +175,7 @@ function GetUserGroups() {
   } generate={generate} />
 }
 
-function CreateNewUser() {
+function CreateNewUser({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [name, setName] = useState('')
   const [samAccount, setSamAccount] = useState('')
   const [givenName, setGivenName] = useState('')
@@ -200,7 +202,7 @@ function CreateNewUser() {
     return `# Create new AD user\n${cmd}`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Field label="Full name (Name)" value={name} onChange={setName} placeholder="John Doe" />
       <Field label="sAMAccountName" value={samAccount} onChange={setSamAccount} placeholder="jdoe" />
@@ -217,7 +219,7 @@ function CreateNewUser() {
   } generate={generate} />
 }
 
-function EnableDisableAccount() {
+function EnableDisableAccount({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [username, setUsername] = useState('')
   const [action, setAction] = useState<'enable' | 'disable'>('enable')
 
@@ -227,7 +229,7 @@ function EnableDisableAccount() {
     return `# ${action === 'enable' ? 'Enable' : 'Disable'} AD account\n${cmd} -Identity "${username}"`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <Field label="Username (sAMAccountName)" value={username} onChange={setUsername} placeholder="jdoe" />
       <div className="space-y-2">
@@ -246,7 +248,7 @@ function EnableDisableAccount() {
   } generate={generate} />
 }
 
-function ResetPassword() {
+function ResetPassword({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [username, setUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [requireChange, setRequireChange] = useState(true)
@@ -261,7 +263,7 @@ function ResetPassword() {
     return `# Reset user password\n${cmd}`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <Field label="Username (sAMAccountName)" value={username} onChange={setUsername} placeholder="jdoe" />
       <Field label="New password" value={newPassword} onChange={setNewPassword} placeholder="NewSecurePass123!" />
@@ -273,7 +275,7 @@ function ResetPassword() {
   } generate={generate} />
 }
 
-function UnlockAccount() {
+function UnlockAccount({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [username, setUsername] = useState('')
 
   const generate = () => {
@@ -281,7 +283,7 @@ function UnlockAccount() {
     return `# Unlock AD account\nUnlock-ADAccount -Identity "${username}"`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <Field label="Username (sAMAccountName)" value={username} onChange={setUsername} placeholder="jdoe" />
   } generate={generate} />
 }
@@ -330,7 +332,7 @@ const PRESET_PROPS: Record<string, string> = {
   contact: 'Name,SamAccountName,EmailAddress,UserPrincipalName,Office,PhoneNumber',
 }
 
-function SearchUsers() {
+function SearchUsers({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [searchMode, setSearchMode] = useState<'filter' | 'identities'>('filter')
   // Filter mode state
   const [filterField, setFilterField] = useState('Name')
@@ -403,7 +405,7 @@ function SearchUsers() {
     return lines.join('\n')
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <div className="space-y-4">
       {/* Search mode tabs */}
       <div className="space-y-2">
@@ -528,7 +530,74 @@ function SearchUsers() {
   } generate={generate} />
 }
 
-function CheckEffectiveRights() {
+function OUUserGroupReport({ domains }: { domains?: { name: string; dc: string }[] }) {
+  const [ouPath, setOuPath] = useState('')
+  const [includeNestedOUs, setIncludeNestedOUs] = useState(false)
+
+  const generate = () => {
+    if (!ouPath) return ''
+    const lines: string[] = []
+    lines.push('# Report: Users and their group memberships in OU')
+    lines.push(`$ouPath = "${ouPath}"`)
+    lines.push('')
+
+    if (includeNestedOUs) {
+      lines.push('# Get all users from this OU and all sub-OUs')
+      lines.push('$users = Get-ADUser -Filter * -SearchBase $ouPath -SearchScope Subtree -Properties MemberOf,Department,Title')
+    } else {
+      lines.push('# Get users only from the specified OU (not sub-OUs)')
+      lines.push('$users = Get-ADUser -Filter * -SearchBase $ouPath -SearchScope OneLevel -Properties MemberOf,Department,Title')
+    }
+    lines.push('')
+    lines.push('# Build custom object: user info + comma-separated group list')
+    lines.push('$report = $users | ForEach-Object {')
+    lines.push('    $groups = $_.MemberOf | ForEach-Object {')
+    lines.push('        ($_.Split(",")[0]).Replace("CN=","")')
+    lines.push('    }')
+    lines.push('    [PSCustomObject]@{')
+    lines.push('        SamAccountName = $_.SamAccountName')
+    lines.push('        Name          = $_.Name')
+    lines.push('        Enabled       = $_.Enabled')
+    lines.push('        Department    = $_.Department')
+    lines.push('        Title         = $_.Title')
+    lines.push('        GroupCount    = ($groups | Measure-Object).Count')
+    lines.push('        Groups        = ($groups | Sort-Object) -join ", "')
+    lines.push('    }')
+    lines.push('}')
+    lines.push('')
+    lines.push('# Output table')
+    lines.push('$report | Select-Object SamAccountName, Name, Enabled, Department, Title, GroupCount, Groups |')
+    lines.push('    Sort-Object Name |')
+    lines.push('    Format-Table -AutoSize -Wrap')
+    lines.push('')
+    lines.push('# Export to CSV (optional - uncomment to save)')
+    lines.push('# $report | Sort-Object Name | Export-Csv -Path "C:\\OU-User-Groups-Report.csv" -NoTypeInformation -Encoding UTF8')
+    lines.push('')
+    lines.push(`# Total users: $($report.Count)`)
+    lines.push('# Users with most groups:')
+    lines.push('$report | Sort-Object GroupCount -Descending | Select-Object -First 10 SamAccountName, GroupCount, Groups | Format-Table -AutoSize -Wrap')
+    return lines.join('\n')
+  }
+
+  return <CommandForm domains={domains} inputs={
+    <div className="space-y-4">
+      <Field label="OU Path (Distinguished Name)" value={ouPath} onChange={setOuPath} placeholder="OU=Users,DC=domain,DC=com" />
+      <div className="flex flex-wrap gap-4">
+        <div className="flex items-center gap-2">
+          <Checkbox id="nestedOUs" checked={includeNestedOUs} onCheckedChange={(v) => setIncludeNestedOUs(v === true)} />
+          <Label htmlFor="nestedOUs" className="text-sm cursor-pointer">Include sub-OUs (recursive)</Label>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Generates a PowerShell script that enumerates all users in the specified OU and outputs a table
+        with their properties, group count, and comma-separated group memberships. Includes a top-10 by group
+        count summary and an optional CSV export command.
+      </p>
+    </div>
+  } generate={generate} />
+}
+
+function CheckEffectiveRights({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [checkMode, setCheckMode] = useState<'acl' | 'user-rights' | 'privileged-groups'>('acl')
   // ACL mode
   const [targetObject, setTargetObject] = useState('')
@@ -625,7 +694,7 @@ function CheckEffectiveRights() {
     return lines.join('\n')
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <div className="space-y-4">
       {/* Mode selector */}
       <div className="space-y-2">
@@ -688,7 +757,7 @@ function CheckEffectiveRights() {
   } generate={generate} />
 }
 
-function CreateGroup() {
+function CreateGroup({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [groupName, setGroupName] = useState('')
   const [scope, setScope] = useState('Global')
   const [category, setCategory] = useState('Security')
@@ -708,7 +777,7 @@ function CreateGroup() {
     return `# Create new AD group\n${cmd}`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <Field label="Group name" value={groupName} onChange={setGroupName} placeholder="e.g. 'Project-Alpha'" />
       <div className="space-y-2">
@@ -742,7 +811,7 @@ function CreateGroup() {
   } generate={generate} />
 }
 
-function MoveUser() {
+function MoveUser({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [username, setUsername] = useState('')
   const [targetOU, setTargetOU] = useState('')
 
@@ -751,7 +820,7 @@ function MoveUser() {
     return `# Move user to another OU\nMove-ADObject -Identity (Get-ADUser -Identity "${username}").DistinguishedName -TargetPath "${targetOU}"`
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <Field label="Username (sAMAccountName)" value={username} onChange={setUsername} placeholder="jdoe" />
       <Field label="Target OU (Distinguished Name)" value={targetOU} onChange={setTargetOU} placeholder='OU=Managers,DC=domain,DC=com' />
@@ -759,7 +828,7 @@ function MoveUser() {
   } generate={generate} />
 }
 
-function BulkImportCSV() {
+function BulkImportCSV({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [csvHeaders, setCsvHeaders] = useState('Name,SamAccountName,GivenName,Surname,EmailAddress,Department')
   const [ouPath, setOuPath] = useState('')
   const [password, setPassword] = useState('TempPass123!')
@@ -792,7 +861,7 @@ function BulkImportCSV() {
     return script
   }
 
-  return <CommandForm inputs={
+  return <CommandForm domains={domains} inputs={
     <>
       <div className="space-y-2">
         <Label className="text-sm font-medium">CSV column headers (comma-separated)</Label>
@@ -856,18 +925,46 @@ function Field({
 function CommandForm({
   inputs,
   generate,
+  domains = [],
 }: {
   inputs: React.ReactNode
   generate: () => string
+  domains?: { name: string; dc: string }[]
 }) {
   const [command, setCommand] = useState('')
   const [copied, setCopied] = useState(false)
 
   const handleGenerate = useCallback(() => {
-    const cmd = generate()
-    setCommand(cmd)
+    const baseCmd = generate()
+    if (domains.length === 0 || !baseCmd) {
+      setCommand(baseCmd)
+      setCopied(false)
+      return
+    }
+    // For multi-domain: generate a block per domain with -Server inserted
+    const blocks: string[] = []
+    for (const domain of domains) {
+      const header = `# --- Domain: ${domain.name} (${domain.dc}) ---`
+      const adCmdlets = ['Add-ADGroupMember', 'Remove-ADGroupMember', 'Get-ADGroupMember',
+        'Get-ADPrincipalGroupMembership', 'New-ADUser', 'Enable-ADAccount', 'Disable-ADAccount',
+        'Set-ADAccountPassword', 'Set-ADUser', 'Unlock-ADAccount', 'Get-ADUser', 'Get-ADGroup',
+        'New-ADGroup', 'Move-ADObject', 'Get-Acl', 'Import-Csv']
+      const lines = baseCmd.split('\n')
+      const modified = lines.map((line) => {
+        const trimmed = line.trimStart()
+        for (const cmdlet of adCmdlets) {
+          if (trimmed.startsWith(cmdlet + ' ') || trimmed.startsWith(cmdlet + '\\')) {
+            return line.replace(cmdlet, `${cmdlet} -Server "${domain.dc}"`)
+          }
+        }
+        return line
+      })
+      blocks.push(header)
+      blocks.push(modified.join('\n'))
+    }
+    setCommand(blocks.join('\n\n'))
     setCopied(false)
-  }, [generate])
+  }, [generate, domains])
 
   const handleCopy = useCallback(async () => {
     if (!command) return
@@ -1006,6 +1103,15 @@ const useCases: UseCase[] = [
     component: SearchUsers,
   },
   {
+    id: 'ou-users-groups',
+    title: 'OU users & groups report',
+    description: 'List all users in an OU with their group memberships as a table',
+    icon: <LayoutList className="h-4 w-4" />,
+    category: 'search',
+    roles: ['user', 'container_admin', 'domain_admin'],
+    component: OUUserGroupReport,
+  },
+  {
     id: 'check-effective-rights',
     title: 'Check effective rights',
     description: 'View ACL on AD objects, check user permissions, or audit privileged group memberships',
@@ -1052,12 +1158,111 @@ const categories = [
   { id: 'import', label: 'Import', icon: <FileUp className="h-4 w-4" /> },
 ]
 
+// ─── Domain Configuration ─────────────────────────────────
+
+function DomainConfigPanel({
+  domains,
+  onDomainsChange,
+}: {
+  domains: { name: string; dc: string }[]
+  onDomainsChange: (d: { name: string; dc: string }[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newDc, setNewDc] = useState('')
+
+  const addDomain = () => {
+    if (!newName.trim() || !newDc.trim()) return
+    if (domains.some((d) => d.name === newName.trim())) return
+    onDomainsChange([...domains, { name: newName.trim(), dc: newDc.trim() }])
+    setNewName('')
+    setNewDc('')
+  }
+
+  const removeDomain = (idx: number) => {
+    onDomainsChange(domains.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Label className="text-sm font-medium">Target domain(s):</Label>
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="text-xs text-primary hover:underline cursor-pointer"
+        >
+          {open ? 'hide' : 'configure'}
+        </button>
+      </div>
+      {open && (
+        <div className="rounded-lg border p-3 space-y-3 bg-card">
+          <p className="text-xs text-muted-foreground">
+            Add domain controllers to generate commands with -Server parameter targeting specific domains.
+            Leave empty for the default (current) domain.
+          </p>
+          {domains.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {domains.map((d, i) => (
+                <Badge key={i} variant="secondary" className="gap-1.5 text-xs">
+                  <Server className="h-3 w-3" />
+                  {d.name} ({d.dc})
+                  <button
+                    type="button"
+                    onClick={() => removeDomain(i)}
+                    className="ml-0.5 text-muted-foreground hover:text-destructive cursor-pointer"
+                  >
+                    x
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Domain FQDN"
+              className="text-xs h-8"
+            />
+            <div className="flex gap-1">
+              <Input
+                value={newDc}
+                onChange={(e) => setNewDc(e.target.value)}
+                placeholder="DC hostname"
+                className="text-xs h-8"
+              />
+              <Button size="sm" variant="outline" onClick={addDomain} className="h-8 px-2 shrink-0">
+                +
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {!open && domains.length === 0 && (
+        <p className="text-xs text-muted-foreground">Default domain (no -Server parameter)</p>
+      )}
+      {!open && domains.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {domains.map((d, i) => (
+            <Badge key={i} variant="secondary" className="gap-1 text-[10px]">
+              <Server className="h-3 w-3" />
+              {d.name}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Page ───────────────────────────────────────────
 
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState('all')
   const [activeRole, setActiveRole] = useState<Role>('container_admin')
   const [expandedCard, setExpandedCard] = useState<string | null>(null)
+  const [domains, setDomains] = useState<{ name: string; dc: string }[]>([])
 
   const roleFiltered = useCases.filter((uc) => uc.roles.includes(activeRole))
 
@@ -1124,6 +1329,11 @@ export default function Home() {
                 {ROLES.find((r) => r.id === activeRole)!.description}
               </p>
             )}
+          </div>
+
+          {/* Domain Configuration */}
+          <div className="mt-3">
+            <DomainConfigPanel domains={domains} onDomainsChange={setDomains} />
           </div>
         </div>
       </header>
@@ -1201,7 +1411,7 @@ export default function Home() {
                         onClick={(e) => e.stopPropagation()}
                         className="pt-0"
                       >
-                        <Component />
+                        <Component domains={domains} />
                       </CardContent>
                     )}
                   </Card>
