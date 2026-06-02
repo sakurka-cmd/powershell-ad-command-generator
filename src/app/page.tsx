@@ -537,110 +537,81 @@ function SearchUsers({ domains }: { domains?: { name: string; dc: string }[] }) 
 function OUUserGroupReport({ domains }: { domains?: { name: string; dc: string }[] }) {
   const [ouPath, setOuPath] = useState('')
   const [includeNestedOUs, setIncludeNestedOUs] = useState(false)
+  const [outputFormat, setOutputFormat] = useState<'table' | 'csv' | 'gridview'>('table')
 
   const generate = () => {
     if (!ouPath) return ''
     const scope = includeNestedOUs ? 'Subtree' : 'OneLevel'
     const lines: string[] = []
-    lines.push('# ═══════════════════════════════════════════════════')
     lines.push('# Report: Users, Groups and Memberships in OU')
-    lines.push('# ═══════════════════════════════════════════════════')
     lines.push(`$ouPath = "${ouPath}"`)
-    lines.push('')
     lines.push(`$scope = "${scope}"`)
+    lines.push('$report = @()')
     lines.push('')
 
-    // ── Part 1: Groups inside the OU ──
-    lines.push('# ── Part 1: Groups inside this OU ──────────────────')
+    // ── Section 1: Groups inside the OU ──
+    lines.push('# ── Groups inside this OU ──')
     lines.push('$groups = Get-ADGroup -Filter * -SearchBase $ouPath -SearchScope $scope -Properties Description,GroupCategory,GroupScope,Member |')
     lines.push('    Sort-Object Name')
     lines.push('')
-    lines.push('Write-Host "=== Groups in OU: $ouPath ===" -ForegroundColor Cyan')
-    lines.push('Write-Host "Total groups: $($groups.Count)" -ForegroundColor Yellow')
-    lines.push('Write-Host ""')
-    lines.push('')
-    lines.push('# Groups overview table')
-    lines.push('$groupsOverview = $groups | ForEach-Object {')
-    lines.push('    [PSCustomObject]@{')
-    lines.push('        GroupName     = $_.Name')
-    lines.push('        SamAccountName = $_.SamAccountName')
-    lines.push('        Category      = $_.GroupCategory')
-    lines.push('        Scope         = $_.GroupScope')
-    lines.push('        Members       = ($_.Member | Measure-Object).Count')
-    lines.push('        Description   = $_.Description')
-    lines.push('    }')
-    lines.push('}')
-    lines.push('$groupsOverview | Format-Table -AutoSize -Wrap')
-    lines.push('')
-
-    // ── Part 2: Members of each group ──
-    lines.push('# ── Part 2: Members of each group ─────────────────')
-    lines.push('Write-Host "=== Members per group ===" -ForegroundColor Cyan')
-    lines.push('')
-    lines.push('foreach ($group in $groups) {')
-    lines.push('    $members = $group.Member | ForEach-Object {')
+    lines.push('$groups | ForEach-Object {')
+    lines.push('    $memberNames = @()')
+    lines.push('    foreach ($m in $_.Member) {')
     lines.push('        try {')
-    lines.push('            $obj = Get-ADObject -Identity $_ -Properties SamAccountName,ObjectClass')
-    lines.push('            [PSCustomObject]@{')
-    lines.push('                SamAccountName = $obj.SamAccountName')
-    lines.push('                Name           = $obj.Name')
-    lines.push('                ObjectClass    = $obj.ObjectClass')
-    lines.push('            }')
-    lines.push('        } catch {')
-    lines.push('            [PSCustomObject]@{')
-    lines.push('                SamAccountName = "-"')
-    lines.push('                Name           = ($_.Split(",")[0]).Replace("CN=","")')
-    lines.push('                ObjectClass    = "unknown/external"')
-    lines.push('            }')
-    lines.push('        }')
+    lines.push('            $o = Get-ADObject -Identity $m -Properties SamAccountName')
+    lines.push('            $memberNames += if ($o.SamAccountName) { $o.SamAccountName } else { $o.Name }')
+    lines.push('        } catch { $memberNames += ($m.Split(",")[0]).Replace("CN=","") }')
     lines.push('    }')
-    lines.push('    Write-Host "[$($group.Name)] — $($members.Count) member(s)" -ForegroundColor Yellow')
-    lines.push('    $members | Format-Table -AutoSize')
-    lines.push('    Write-Host ""')
+    lines.push('    $report += [PSCustomObject]@{')
+    lines.push('        Type         = "Group"')
+    lines.push('        Name         = $_.Name')
+    lines.push('        SamAccount   = $_.SamAccountName')
+    lines.push('        Info1        = "$($_.GroupCategory) / $($_.GroupScope)"')
+    lines.push('        Info2        = $_.Description')
+    lines.push('        MemberCount  = $memberNames.Count')
+    lines.push('        Members      = ($memberNames | Sort-Object) -join ", "')
+    lines.push('    }')
     lines.push('}')
     lines.push('')
 
-    // ── Part 3: Users in OU with their memberships ──
-    lines.push('# ── Part 3: Users in OU and their group memberships ──')
+    // ── Section 2: Users in OU ──
+    lines.push('# ── Users in this OU ──')
     lines.push('$users = Get-ADUser -Filter * -SearchBase $ouPath -SearchScope $scope -Properties MemberOf,Department,Title')
     lines.push('')
-    lines.push('Write-Host "=== Users in OU with group memberships ===" -ForegroundColor Cyan')
-    lines.push('Write-Host "Total users: $($users.Count)" -ForegroundColor Yellow')
-    lines.push('Write-Host ""')
-    lines.push('')
-    lines.push('$report = $users | ForEach-Object {')
-    lines.push('    $groups = $_.MemberOf | ForEach-Object {')
-    lines.push('        ($_.Split(",")[0]).Replace("CN=","")')
-    lines.push('    }')
-    lines.push('    [PSCustomObject]@{')
-    lines.push('        SamAccountName = $_.SamAccountName')
-    lines.push('        Name          = $_.Name')
-    lines.push('        Enabled       = $_.Enabled')
-    lines.push('        Department    = $_.Department')
-    lines.push('        Title         = $_.Title')
-    lines.push('        GroupCount    = ($groups | Measure-Object).Count')
-    lines.push('        Groups        = ($groups | Sort-Object) -join ", "')
+    lines.push('$users | ForEach-Object {')
+    lines.push('    $grpList = $_.MemberOf | ForEach-Object { ($_.Split(",")[0]).Replace("CN=","") }')
+    lines.push('    $report += [PSCustomObject]@{')
+    lines.push('        Type         = "User"')
+    lines.push('        Name         = $_.Name')
+    lines.push('        SamAccount   = $_.SamAccountName')
+    lines.push('        Info1        = $_.Department')
+    lines.push('        Info2        = $_.Title')
+    lines.push('        MemberCount  = ($grpList | Measure-Object).Count')
+    lines.push('        Members      = ($grpList | Sort-Object) -join ", "')
     lines.push('    }')
     lines.push('}')
     lines.push('')
-    lines.push('$report | Select-Object SamAccountName, Name, Enabled, Department, Title, GroupCount, Groups |')
-    lines.push('    Sort-Object Name |')
-    lines.push('    Format-Table -AutoSize -Wrap')
-    lines.push('')
 
-    // ── Summary ──
-    lines.push('# ── Summary ─────────────────────────────────────────')
-    lines.push('Write-Host "=== Summary ===" -ForegroundColor Cyan')
-    lines.push('Write-Host "  Total groups in OU:   $($groupsOverview.Count)"')
-    lines.push('Write-Host "  Total users in OU:    $($report.Count)"')
-    lines.push('Write-Host "  Total group members:  $(($groupsOverview | Measure-Object -Property Members -Sum).Sum)"')
-    lines.push('')
-    lines.push('# Users with most groups (top 10)')
-    lines.push('$report | Sort-Object GroupCount -Descending | Select-Object -First 10 SamAccountName, GroupCount, Groups | Format-Table -AutoSize -Wrap')
-    lines.push('')
-    lines.push('# Export to CSV (optional - uncomment to save)')
-    lines.push('# $report | Sort-Object Name | Export-Csv -Path "C:\\OU-User-Groups-Report.csv" -NoTypeInformation -Encoding UTF8')
-    lines.push('# $groupsOverview | Sort-Object Name | Export-Csv -Path "C:\\OU-Groups-Report.csv" -NoTypeInformation -Encoding UTF8')
+    // ── Output ──
+    if (outputFormat === 'csv') {
+      lines.push('# Output to CSV file')
+      lines.push('$csvPath = "C:\\OU-Report-$([guid]::NewGuid().ToString(\"N\").Substring(0,8)).csv"')
+      lines.push('$report | Select-Object Type, Name, SamAccount, Info1, Info2, MemberCount, Members |')
+      lines.push('    Sort-Object Type, Name |')
+      lines.push('    Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8')
+      lines.push('Write-Host "Report saved to: $csvPath" -ForegroundColor Green')
+      lines.push('Write-Host "  Groups: $(($report | Where-Object Type -eq Group).Count)  |  Users: $(($report | Where-Object Type -eq User).Count)" -ForegroundColor Yellow')
+    } else if (outputFormat === 'gridview') {
+      lines.push('# Output in interactive GridView window')
+      lines.push('$report | Select-Object Type, Name, SamAccount, Info1, Info2, MemberCount, Members |')
+      lines.push('    Sort-Object Type, Name |')
+      lines.push('    Out-GridView -Title "OU Report: $ouPath"')
+    } else {
+      lines.push('# Output as single table')
+      lines.push('$report | Select-Object Type, Name, SamAccount, Info1, Info2, MemberCount, Members |')
+      lines.push('    Sort-Object Type, Name |')
+      lines.push('    Format-Table -AutoSize -Wrap')
+    }
     return lines.join('\n')
   }
 
@@ -653,10 +624,33 @@ function OUUserGroupReport({ domains }: { domains?: { name: string; dc: string }
           <Label htmlFor="nestedOUs" className="text-sm cursor-pointer">Include sub-OUs (recursive)</Label>
         </div>
       </div>
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">Output format</Label>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ['table', 'Console table'],
+            ['csv', 'CSV file'],
+            ['gridview', 'Out-GridView'],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setOutputFormat(val)}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-all ${
+                outputFormat === val
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background border-border hover:bg-accent'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <p className="text-xs text-muted-foreground">
-        Generates a 3-part report: (1) all groups within the OU with category/scope/member count,
-        (2) members of each group (users, computers, nested groups), (3) all users with their group memberships.
-        Includes a summary and optional CSV export.
+        Builds a single consolidated table with all groups and users from the specified OU.
+        Columns: Type (Group/User), Name, SamAccount, Info1 (category+scope / department),
+        Info2 (description / title), MemberCount, Members list.
       </p>
     </div>
   } generate={generate} />
